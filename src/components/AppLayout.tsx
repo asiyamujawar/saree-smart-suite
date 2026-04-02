@@ -1,5 +1,6 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { supabase } from "@/lib/supabase";
 import {
   LayoutDashboard,
   Package,
@@ -29,6 +30,12 @@ const navItems = [
 export default function AppLayout({ children }: { children: ReactNode }) {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const userEmail = "admin@mangalmurti.com";
+
+  const handleLogout = () => {
+    localStorage.removeItem("mangalmurtiAdmin");
+    window.location.href = "/login";
+  };
 
   return (
     <div className="flex min-h-screen w-full bg-background">
@@ -53,8 +60,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <span className="font-display text-sm font-bold text-sidebar-primary-foreground">M</span>
           </div>
           <div>
-            <h1 className="font-display text-base font-semibold text-sidebar-foreground">Mangalmurti</h1>
-            <p className="text-[11px] text-sidebar-foreground/60">Saree Management</p>
+            <h1 className="font-display text-base font-semibold text-sidebar-foreground">Mangalmurti Sarees</h1>
+            <p className="text-[11px] text-sidebar-foreground/60">Store Management</p>
           </div>
           <button onClick={() => setSidebarOpen(false)} className="ml-auto lg:hidden text-sidebar-foreground/70">
             <X className="h-5 w-5" />
@@ -87,14 +94,16 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         {/* Bottom */}
         <div className="border-t border-sidebar-border p-3">
           <div className="flex items-center gap-3 rounded-lg px-3 py-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sidebar-accent text-xs font-semibold text-sidebar-primary">
-              AD
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sidebar-accent text-xs font-semibold text-sidebar-primary uppercase">
+              {userEmail.substring(0,2)}
             </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-sidebar-foreground">Admin</p>
-              <p className="text-[11px] text-sidebar-foreground/50">admin@mangalmurti.com</p>
+            <div className="flex-1 overflow-hidden">
+              <p className="text-sm font-medium text-sidebar-foreground truncate">{userEmail.split('@')[0]}</p>
+              <p className="text-[10px] text-sidebar-foreground/50 truncate w-[130px]">{userEmail}</p>
             </div>
-            <LogOut className="h-4 w-4 text-sidebar-foreground/50" />
+            <button onClick={handleLogout} className="p-2 hover:bg-sidebar-accent hover:text-destructive rounded transition-colors group">
+               <LogOut className="h-4 w-4 text-sidebar-foreground/50 group-hover:text-destructive" />
+            </button>
           </div>
         </div>
       </aside>

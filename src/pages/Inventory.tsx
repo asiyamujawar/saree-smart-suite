@@ -1,12 +1,26 @@
-import { products } from "@/lib/mock-data";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase";
 import StatusBadge from "@/components/StatusBadge";
-import { Package, AlertTriangle, TrendingDown, ArrowUpDown } from "lucide-react";
+import { Package, AlertTriangle, TrendingDown, ArrowUpDown, Loader2 } from "lucide-react";
 import StatCard from "@/components/StatCard";
 
 export default function Inventory() {
-  const totalStock = products.reduce((s, p) => s + p.stock, 0);
-  const lowStock = products.filter((p) => p.stock <= 10);
-  const totalValue = products.reduce((s, p) => s + p.retailPrice * p.stock, 0);
+  const { data: products = [], isLoading } = useQuery({
+    queryKey: ["products"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("products").select("*");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const totalStock = products.reduce((s: number, p: any) => s + (p.stock || 0), 0);
+  const lowStock = products.filter((p: any) => (p.stock || 0) <= 10);
+  const totalValue = products.reduce((s: number, p: any) => s + (p.retail_price || 0) * (p.stock || 0), 0);
+
+  if (isLoading) {
+    return <div className="p-12 flex items-center justify-center text-muted-foreground"><Loader2 className="mr-2 animate-spin" /> Loading inventory...</div>;
+  }
 
   return (
     <div className="space-y-6">
@@ -19,7 +33,7 @@ export default function Inventory() {
         <StatCard title="Total Stock" value={totalStock.toString()} icon={Package} change={`${products.length} products`} />
         <StatCard title="Low Stock Items" value={lowStock.length.toString()} icon={AlertTriangle} iconBg="bg-destructive/10" change="Reorder needed" changeType="negative" />
         <StatCard title="Inventory Value" value={`₹${(totalValue / 100000).toFixed(1)}L`} icon={TrendingDown} change="At retail price" />
-        <StatCard title="Stock Movements" value="47" icon={ArrowUpDown} change="This month" />
+        <StatCard title="Stock Movements" value="0" icon={ArrowUpDown} change="This month" />
       </div>
 
       <div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -39,7 +53,12 @@ export default function Inventory() {
               </tr>
             </thead>
             <tbody>
-              {products.map((p) => (
+              {products.length === 0 ? (
+                <tr>
+                   <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">No inventory data found.</td>
+                </tr>
+              ) : null}
+              {products.map((p: any) => (
                 <tr key={p.id} className="border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors">
                   <td className="px-4 py-3 font-medium text-foreground">{p.name}</td>
                   <td className="px-4 py-3 text-muted-foreground">{p.sku}</td>
@@ -48,7 +67,7 @@ export default function Inventory() {
                   <td className="px-4 py-3 text-center">
                     <StatusBadge status={p.stock <= 5 ? "low" : p.stock <= 10 ? "pending" : "ok"} label={p.stock <= 5 ? "Critical" : p.stock <= 10 ? "Low" : "In Stock"} />
                   </td>
-                  <td className="px-4 py-3 text-right text-foreground">₹{(p.retailPrice * p.stock).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right text-foreground">₹{((p.retail_price || 0) * (p.stock || 0)).toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>
