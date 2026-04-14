@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Search, Loader2 } from "lucide-react";
+import { Plus, Search, Loader2, Receipt, Eye } from "lucide-react";
 import StatusBadge from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,9 +21,33 @@ interface Customer {
   last_purchase: string | null;
 }
 
+interface Invoice {
+  id: string;
+  invoice_no: string;
+  customer_name: string;
+  date: string;
+  items: number;
+  total: number;
+  gst: number;
+  grand_total: number;
+  payment_method: string;
+  status: "paid" | "pending" | "partial";
+  items_detail?: InvoiceItem[];
+}
+
+interface InvoiceItem {
+  id: string;
+  product_id: string;
+  name: string;
+  price: number;
+  quantity: number;
+  total: number;
+}
+
 export default function Customers() {
   const [search, setSearch] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const queryClient = useQueryClient();
 
   const [name, setName] = useState("");
@@ -46,6 +70,21 @@ export default function Customers() {
       return data as Customer[];
     },
   });
+
+  const { data: allInvoices = [] } = useQuery({
+    queryKey: ["invoices"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("invoices").select("*").order("date", { ascending: false });
+      if (error) throw error;
+      return data as Invoice[];
+    },
+  });
+
+  const customerInvoices = selectedCustomer
+    ? allInvoices.filter(inv =>
+        inv.customer_name?.toLowerCase() === selectedCustomer.name.toLowerCase()
+      )
+    : [];
 
   const addCustomerMutation = useMutation({
     mutationFn: async (newCustomer: Partial<Customer>) => {
@@ -154,11 +193,109 @@ export default function Customers() {
                   <p className="font-semibold text-foreground">₹{c.outstanding?.toLocaleString() || 0}</p>
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground">Last purchase: {c.last_purchase ? new Date(c.last_purchase).toLocaleDateString() : "Never"}</p>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">Last purchase: {c.last_purchase ? new Date(c.last_purchase).toLocaleDateString() : "Never"}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1 h-7 text-xs"
+                  onClick={() => setSelectedCustomer(c)}
+                >
+                  <Receipt className="h-3 w-3" />
+                  Bills
+                </Button>
+              </div>
             </div>
           ))}
         </div>
       )}
+
+      {/* Customer Billing History Dialog */}
+      <Dialog open={!!selectedCustomer} onOpenChange={(open) => !open && setSelectedCustomer(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-display">
+              Purchase History - {selectedCustomer?.name}
+            </DialogTitle>
+          </DialogHeader>
+          
+          {selectedCustomer && (
+            <div className="space-y-4">
+              {/* Customer Summary */}
+              <div className="grid grid-cols-3 gap-4 p-4 bg-muted/30 rounded-lg">
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground">Total Purchases</p>
+                  <p className="text-lg font-semibold">₹{selectedCustomer.total_purchases?.toLocaleString() || 0}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground">Outstanding</p>
+                  <p className="text-lg font-semibold text-orange-600">₹{selectedCustomer.outstanding?.toLocaleString() || 0}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground">Customer Type</p>
+                  <StatusBadge status={selectedCustomer.type} />
+                </div>
+              </div>
+
+              {/* Invoices Table */}
+              <div className="border rounded-lg overflow-hidden">
+                <div className="bg-muted/30 px-4 py-2 border-b">
+                  <h3 className="font-medium">Invoice History ({customerInvoices.length})</h3>
+                </div>
+                
+                {customerInvoices.length === 0 ? (
+                  <div className="p-8 text-center text-muted-foreground">
+                    No invoices found for this customer
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted/10 border-b">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-medium text-muted-foreground">Invoice #</th>
+                          <th className="px-4 py-3 text-left font-medium text-muted-foreground">Date</th>
+                          <th className="px-4 py-3 text-center font-medium text-muted-foreground">Items</th>
+                          <th className="px-4 py-3 text-right font-medium text-muted-foreground">Total</th>
+                          <th className="px-4 py-3 text-center font-medium text-muted-foreground">Payment</th>
+                          <th className="px-4 py-3 text-center font-medium text-muted-foreground">Status</th>
+                          <th className="px-4 py-3 text-center font-medium text-muted-foreground">Items Purchased</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {customerInvoices.map((inv) => (
+                          <tr key={inv.id} className="border-b border-border/50 hover:bg-muted/20">
+                            <td className="px-4 py-3 font-medium">{inv.invoice_no}</td>
+                            <td className="px-4 py-3 text-muted-foreground">{new Date(inv.date).toLocaleDateString()}</td>
+                            <td className="px-4 py-3 text-center">{inv.items}</td>
+                            <td className="px-4 py-3 text-right font-semibold">₹{inv.grand_total?.toLocaleString() || 0}</td>
+                            <td className="px-4 py-3 text-center uppercase text-xs">{inv.payment_method}</td>
+                            <td className="px-4 py-3 text-center"><StatusBadge status={inv.status} /></td>
+                            <td className="px-4 py-3">
+                              {inv.items_detail && inv.items_detail.length > 0 ? (
+                                <div className="space-y-1">
+                                  {inv.items_detail.map((item, idx) => (
+                                    <div key={idx} className="text-xs">
+                                      <span className="font-medium">{item.name}</span>
+                                      <span className="text-muted-foreground"> × {item.quantity}</span>
+                                      <span className="text-muted-foreground"> @ ₹{item.price.toLocaleString()}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">Legacy invoice</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

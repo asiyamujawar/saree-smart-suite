@@ -12,6 +12,17 @@ import { toast } from "sonner";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
+interface Customer {
+  id: string;
+  name: string;
+  phone: string;
+  email: string | null;
+  type: "retail" | "wholesale";
+  total_purchases: number;
+  outstanding: number;
+  last_purchase: string | null;
+}
+
 interface Product {
   id: string;
   name: string;
@@ -57,6 +68,7 @@ export default function Billing() {
 
   // Invoice Form State
   const [customer, setCustomer] = useState("");
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [gst, setGst] = useState("5");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [billingType, setBillingType] = useState<"retail" | "wholesale">("retail");
@@ -68,6 +80,7 @@ export default function Billing() {
 
   const resetForm = () => {
     setCustomer("");
+    setSelectedCustomerId("");
     setGst("5");
     setPaymentMethod("");
     setBillingType("retail");
@@ -91,6 +104,15 @@ export default function Billing() {
       const { data, error } = await supabase.from("products").select("*").order("name", { ascending: true });
       if (error) throw error;
       return data as Product[];
+    },
+  });
+
+  const { data: customers = [] } = useQuery({
+    queryKey: ["customers"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("customers").select("*").order("name", { ascending: true });
+      if (error) throw error;
+      return data as Customer[];
     },
   });
 
@@ -121,12 +143,49 @@ export default function Billing() {
         }
       }
 
+      // Auto-create customer if manual entry and update stats
+      let customerId = selectedCustomerId;
+      if (!selectedCustomerId && customer) {
+        // Create new customer from manual entry
+        const { data: newCustomer, error: customerError } = await supabase
+          .from("customers")
+          .insert([{
+            name: customer,
+            phone: "N/A", // Default since we don't collect phone in billing
+            email: null,
+            type: billingType,
+            total_purchases: newInvoice.grand_total || 0,
+            outstanding: newInvoice.status === "paid" ? 0 : (newInvoice.grand_total || 0),
+            last_purchase: new Date().toISOString(),
+          }])
+          .select("*")
+          .single();
+        
+        if (customerError) throw customerError;
+        customerId = newCustomer.id;
+      } else if (selectedCustomerId) {
+        // Update existing customer stats
+        const linked = customers.find(c => c.id === selectedCustomerId);
+        if (linked) {
+          const grandTotal = newInvoice.grand_total ?? 0;
+          const isPaid = newInvoice.status === "paid";
+          await supabase.from("customers").update({
+            total_purchases: (linked.total_purchases || 0) + grandTotal,
+            outstanding: isPaid
+              ? linked.outstanding
+              : (linked.outstanding || 0) + grandTotal,
+            last_purchase: new Date().toISOString(),
+          }).eq("id", selectedCustomerId);
+        }
+      }
+
       return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
       queryClient.invalidateQueries({ queryKey: ["products"] });
-      toast.success("Invoice generated successfully & Stock deducted.");
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      toast.success("Invoice generated & customer updated successfully!");
       setIsDialogOpen(false);
       resetForm();
     },
@@ -280,7 +339,38 @@ export default function Billing() {
             <DialogHeader><DialogTitle className="font-display">Create Invoice</DialogTitle></DialogHeader>
             <div className="grid gap-6 py-2">
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 bg-muted/30 p-4 rounded-lg">
-                <div className="grid gap-2 lg:col-span-2"><Label>Customer Name *</Label><Input value={customer} onChange={e => setCustomer(e.target.value)} placeholder="Customer name" /></div>
+                <div className="grid gap-2 lg:col-span-2">
+                  <Label>Customer *</Label>
+                  <Select
+                    value={selectedCustomerId}
+                    onValueChange={(val) => {
+                      if (val === "__manual__") {
+                        setSelectedCustomerId("");
+                        setCustomer("");
+                      } else {
+                        setSelectedCustomerId(val);
+                        const found = customers.find(c => c.id === val);
+                        if (found) {
+                          setCustomer(found.name);
+                          setBillingType(found.type);
+                        }
+                      }
+                    }}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Select customer" /></SelectTrigger>
+                    <SelectContent>
+                      {customers.map(c => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name} — {c.phone}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="__manual__">+ Enter manually</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {!selectedCustomerId && (
+                    <Input value={customer} onChange={e => setCustomer(e.target.value)} placeholder="Or type customer name" />
+                  )}
+                </div>
                 <div className="grid gap-2"><Label>Pricing Tier *</Label>
                   <Select value={billingType} onValueChange={(v: "retail" | "wholesale") => setBillingType(v)}><SelectTrigger><SelectValue placeholder="Tier" /></SelectTrigger>
                     <SelectContent><SelectItem value="retail">Retail</SelectItem><SelectItem value="wholesale">Wholesale</SelectItem></SelectContent>
